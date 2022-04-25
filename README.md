@@ -9,3 +9,9 @@ cargo run
 ```
 cargo run PORT=8080 PATH=/folder
 ```
+
+## DOCS
+
+```
+GET http://host:port/download/filename.ext
+```
