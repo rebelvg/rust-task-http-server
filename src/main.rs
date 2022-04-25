@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::MAIN_SEPARATOR;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -39,21 +40,46 @@ fn main() {
         }
     }
 
-    let listener_v4 = TcpListener::bind(format!("{}{}", "0.0.0.0:", port)).unwrap();
-
     println!("server_running");
 
-    let pool = ThreadPool::new(4);
+    let listener_v4 = TcpListener::bind(format!("{}{}", "0.0.0.0:", port)).unwrap();
+    let listener_v6 = TcpListener::bind(format!("{}{}", "[::1]:", port)).unwrap();
 
-    for stream in listener_v4.incoming() {
-        let stream = stream.unwrap();
+    let path_arc = Arc::new(Mutex::new(path));
 
-        let capture = path.to_owned();
+    let path_arc_v4 = Arc::clone(&path_arc);
+    let path_arc_v6 = Arc::clone(&path_arc);
 
-        pool.execute(|| {
-            handle_connection(stream, capture);
-        });
-    }
+    let handle_v4 = thread::spawn(move || {
+        let pool = ThreadPool::new(4);
+
+        for stream in listener_v4.incoming() {
+            let stream = stream.unwrap();
+
+            let path_owned = path_arc_v4.lock().unwrap().to_owned();
+
+            pool.execute(|| {
+                handle_connection(stream, path_owned);
+            });
+        }
+    });
+
+    let handle_v6 = thread::spawn(move || {
+        let pool = ThreadPool::new(4);
+
+        for stream in listener_v6.incoming() {
+            let stream = stream.unwrap();
+
+            let path_owned = path_arc_v6.lock().unwrap().to_owned();
+
+            pool.execute(|| {
+                handle_connection(stream, path_owned);
+            });
+        }
+    });
+
+    handle_v4.join().unwrap();
+    handle_v6.join().unwrap();
 }
 
 fn handle_connection(mut stream: TcpStream, path: String) {
