@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::MAIN_SEPARATOR;
+use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -82,7 +83,7 @@ fn main() {
     handle_v6.join().unwrap();
 }
 
-fn handle_connection(mut stream: TcpStream, path: String) {
+fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let HTTP_ERRORS: HashMap<usize, &str> = HashMap::from([
         (200, "OK"),
         (500, "Internal Server Error"),
@@ -108,7 +109,7 @@ fn handle_connection(mut stream: TcpStream, path: String) {
             http_response = text;
         }
         Ok(http_header) => {
-            let request_res = handle_request(&http_header, path);
+            let request_res = handle_request(&http_header, dir_path);
 
             match request_res {
                 Err(text) => match text.as_str() {
@@ -185,7 +186,7 @@ fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
     Ok(http_header)
 }
 
-fn handle_request(http_header: &HttpHeaderStruct, path: String) -> Result<String, String> {
+fn handle_request(http_header: &HttpHeaderStruct, dir_path: String) -> Result<String, String> {
     if http_header.method != "GET" {
         return Err(format!("bad_method"));
     }
@@ -200,11 +201,20 @@ fn handle_request(http_header: &HttpHeaderStruct, path: String) -> Result<String
         return Err(format!("bad_path"));
     }
 
-    println!("{} {}", path, path_vec[1]);
+    println!("{} {}", dir_path, path_vec[1]);
 
-    let file_path = format!("{}{}{}", path, MAIN_SEPARATOR, path_vec[1]);
+    let file_path = Path::new(&dir_path);
 
-    let file_content = fs::read_to_string(file_path);
+    let p = Path::new(&path_vec[1]);
+
+    if p.components()
+        .into_iter()
+        .any(|x| x == Component::ParentDir)
+    {
+        return Err(format!("bad_path"));
+    }
+
+    let file_content = fs::read_to_string(file_path.join(path_vec[1]));
 
     match file_content {
         Err(_text) => {
