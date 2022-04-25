@@ -108,7 +108,7 @@ fn handle_connection(mut stream: TcpStream, path: String) {
             http_response = text;
         }
         Ok(http_header) => {
-            let request_res = handle_request(http_header, path);
+            let request_res = handle_request(&http_header, path);
 
             match request_res {
                 Err(text) => match text.as_str() {
@@ -185,7 +185,7 @@ fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
     Ok(http_header)
 }
 
-fn handle_request(http_header: HttpHeaderStruct, path: String) -> Result<String, String> {
+fn handle_request(http_header: &HttpHeaderStruct, path: String) -> Result<String, String> {
     if http_header.method != "GET" {
         return Err(format!("bad_method"));
     }
