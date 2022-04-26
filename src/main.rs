@@ -172,6 +172,8 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
             }
         }
     } else {
+        println!("http_response - {}", http_response);
+
         stream
             .write(
                 format!(
@@ -214,13 +216,11 @@ impl HttpFileResponse {
 }
 
 fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
-    let headers_hash = HashMap::new();
+    let mut headers_hash = HashMap::new();
 
     let headers_string = String::from_utf8(buffer.to_vec()).unwrap();
 
     let headers_vec: Vec<&str> = headers_string.split("\r\n").collect();
-
-    // println!("{}", headers_string);
 
     let http_header_vec: Vec<&str> = headers_vec[0].split(" ").collect();
 
@@ -230,6 +230,17 @@ fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
 
     if http_header_vec[2] != "HTTP/1.1" {
         return Err(format!("bad_http_protocol"));
+    }
+
+    for header_line in headers_vec.iter() {
+        let header_line_vec: Vec<&str> = header_line.split(": ").collect();
+
+        if header_line_vec.len() == 2 {
+            headers_hash.insert(
+                String::from(header_line_vec[0]),
+                String::from(header_line_vec[1]),
+            );
+        }
     }
 
     let http_header = HttpHeaderStruct {
