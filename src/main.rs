@@ -6,14 +6,16 @@ mod http;
 mod http_get_file;
 mod http_headers;
 mod lib;
+mod log;
 mod tcp;
 
+use crate::log::log;
 use crate::tcp::handle_tcp_connection;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    println!("{:?}", args);
+    log(format!("args {:?}", args));
 
     let mut port: String = String::from("80");
     let mut path: String = format!(
@@ -45,7 +47,7 @@ fn main() {
     let handle_v4 = handle_tcp_connection("0.0.0.0".to_string(), port.clone(), path_arc_v4);
     let handle_v6 = handle_tcp_connection("[::1]".to_string(), port.clone(), path_arc_v6);
 
-    println!("server_running");
+    log(format!("server_running"));
 
     handle_v4.join().unwrap();
     handle_v6.join().unwrap();

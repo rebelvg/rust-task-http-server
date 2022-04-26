@@ -4,6 +4,7 @@ use std::net::TcpStream;
 
 use crate::http_get_file::{handle_request, HttpFileResponse};
 use crate::http_headers::parse_headers;
+use crate::log::log;
 
 pub fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let http_errors: HashMap<usize, &str> = HashMap::from([
@@ -14,7 +15,10 @@ pub fn handle_connection(mut stream: TcpStream, dir_path: String) {
         (404, "Not Found"),
     ]);
 
-    println!("handle_connection ip - {}", stream.peer_addr().unwrap());
+    log(format!(
+        "handle_connection_ip {}",
+        stream.peer_addr().unwrap()
+    ));
 
     let mut buffer = [0; 1024];
 
@@ -62,8 +66,6 @@ pub fn handle_connection(mut stream: TcpStream, dir_path: String) {
         status_code,
         http_errors.get(&&status_code).unwrap(),
     );
-
-    println!("response - {}", response);
 
     stream.write(response.as_bytes()).unwrap();
 
@@ -118,8 +120,6 @@ pub fn handle_connection(mut stream: TcpStream, dir_path: String) {
             stream.write(format!("{}\r\n\r\n", 0,).as_bytes()).unwrap();
         }
     } else {
-        println!("http_response - {}", http_response);
-
         stream
             .write(
                 format!(
@@ -137,5 +137,11 @@ pub fn handle_connection(mut stream: TcpStream, dir_path: String) {
 
     stream.flush().unwrap();
 
-    println!("bytes_written - {}", bytes_written);
+    log(format!(
+        "{} - HTTP {} {} {} bytes",
+        stream.peer_addr().unwrap(),
+        status_code,
+        http_errors.get(&&status_code).unwrap(),
+        bytes_written
+    ));
 }

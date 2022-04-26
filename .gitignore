@@ -1,3 +1,4 @@
 /target
 /folder/*
 !/folder/.gitkeep
+logs.txt

@@ -1,7 +1,9 @@
 use std::fs::File;
+use std::path::MAIN_SEPARATOR;
 use std::path::{Component, Path};
 
 use crate::http_headers::HttpHeaderStruct;
+use crate::log::log;
 
 pub struct HttpFileResponse {
     pub file: File,
@@ -35,7 +37,10 @@ pub fn handle_request(
         return Err(format!("bad_path"));
     }
 
-    println!("{} {}", dir_path, path_vec[1]);
+    log(format!(
+        "reading_file {}{}{}",
+        dir_path, MAIN_SEPARATOR, path_vec[1]
+    ));
 
     let file_path = Path::new(&dir_path);
 
