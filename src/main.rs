@@ -18,6 +18,7 @@ use lib::ThreadPool;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
     println!("{:?}", args);
 
     let mut port: String = String::from("80");
@@ -102,7 +103,6 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let mut status_code = 200;
     let mut http_response: String = String::from("");
     let mut http_file: Option<HttpFileResponse> = None;
-    let mut content_length = 0;
 
     match parse_headers(buffer) {
         Err(text) => {
@@ -128,8 +128,6 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
             Ok(content) => {
                 status_code = 200;
                 http_file = Some(content);
-
-                // content_length = content.size;
             }
         },
     }
@@ -139,15 +137,12 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     // thread::sleep(Duration::from_secs(60));
 
     let response = format!(
-        "HTTP/1.1 {} {}\r\n{}{}\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\n",
         status_code,
         HTTP_ERRORS.get(&&status_code).unwrap(),
-        "Content-Length: 522540234",
-        http_response.len() + content_length as usize,
-        http_response
     );
 
-    println!("{}", response);
+    println!("response - {}", response);
 
     stream.write(response.as_bytes()).unwrap();
 
@@ -156,17 +151,21 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let mut bytes_written = 0;
 
     if let Some(mut value) = http_file {
-        loop {
-            let mut buffer = [0; 1024 * 8];
+        stream
+            .write(format!("{}{}\r\n\r\n", "Content-Length: ", value.size(),).as_bytes())
+            .unwrap();
 
-            match value.content.read(&mut buffer) {
+        let mut buffer = [0; 1024 * 8];
+
+        loop {
+            match value.file.read(&mut buffer) {
                 Ok(bytes) => {
                     println!("{}", bytes);
 
                     bytes_written += bytes;
 
                     if bytes != 0 {
-                        match stream.write(&buffer[..bytes]) {
+                        match stream.write(&buffer[..(bytes)]) {
                             Ok(bytes_socket) => {
                                 println!("bytes_socket - {}", bytes_socket);
                             }
@@ -174,8 +173,6 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
                                 break;
                             }
                         }
-
-                        stream.flush().unwrap();
                     } else {
                         break;
                     }
@@ -185,7 +182,21 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
                 }
             }
         }
+    } else {
+        stream
+            .write(
+                format!(
+                    "{}{}\r\n\r\n{}",
+                    "Content-Length: ",
+                    http_response.len(),
+                    http_response
+                )
+                .as_bytes(),
+            )
+            .unwrap();
     }
+
+    stream.write(format!("\r\n",).as_bytes()).unwrap();
 
     println!("bytes_written - {}", bytes_written);
 }
@@ -198,8 +209,17 @@ struct HttpHeaderStruct {
 }
 
 struct HttpFileResponse {
-    size: u64,
-    content: File,
+    file: File,
+}
+
+impl HttpFileResponse {
+    fn new(file: File) -> HttpFileResponse {
+        HttpFileResponse { file }
+    }
+
+    fn size(&self) -> usize {
+        self.file.metadata().unwrap().len() as usize
+    }
 }
 
 fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
@@ -209,7 +229,7 @@ fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
 
     let headers_vec: Vec<&str> = headers_string.split("\r\n").collect();
 
-    println!("{}", headers_string);
+    // println!("{}", headers_string);
 
     let http_header_vec: Vec<&str> = headers_vec[0].split(" ").collect();
 
@@ -267,12 +287,7 @@ fn handle_request(
             return Err(format!("not_found"));
         }
         Ok(content) => {
-            let res = HttpFileResponse {
-                size: content.metadata().unwrap().len(),
-                content,
-            };
-
-            return Ok(res);
+            return Ok(HttpFileResponse::new(content));
         }
     }
 }
