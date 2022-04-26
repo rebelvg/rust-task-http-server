@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::fs;
+use std::fs::File;
 use std::io::prelude::*;
+use std::io::BufReader;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::MAIN_SEPARATOR;
@@ -98,41 +99,39 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
 
     stream.read(&mut buffer).unwrap();
 
-    let parse_res = parse_headers(buffer);
-
     let mut status_code = 200;
     let mut http_response: String = String::from("");
+    let mut http_file: Option<HttpFileResponse> = None;
+    let mut content_length = 0;
 
-    match parse_res {
+    match parse_headers(buffer) {
         Err(text) => {
             status_code = 500;
             http_response = text;
         }
-        Ok(http_header) => {
-            let request_res = handle_request(&http_header, dir_path);
-
-            match request_res {
-                Err(text) => match text.as_str() {
-                    "bad_method" => {
-                        status_code = 501;
-                        http_response = text;
-                    }
-                    "bad_path" => {
-                        status_code = 400;
-                        http_response = text;
-                    }
-                    "not_found" => {
-                        status_code = 404;
-                        http_response = text;
-                    }
-                    _ => {}
-                },
-                Ok(content) => {
-                    status_code = 200;
-                    http_response = content;
+        Ok(http_header) => match handle_request(&http_header, dir_path) {
+            Err(text) => match text.as_str() {
+                "bad_method" => {
+                    status_code = 501;
+                    http_response = text;
                 }
+                "bad_path" => {
+                    status_code = 400;
+                    http_response = text;
+                }
+                "not_found" => {
+                    status_code = 404;
+                    http_response = text;
+                }
+                _ => {}
+            },
+            Ok(content) => {
+                status_code = 200;
+                http_file = Some(content);
+
+                // content_length = content.size;
             }
-        }
+        },
     }
 
     // handle closed connection
@@ -140,14 +139,55 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     // thread::sleep(Duration::from_secs(60));
 
     let response = format!(
-        "HTTP/1.1 {} {}\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\n{}{}\r\n\r\n{}",
         status_code,
         HTTP_ERRORS.get(&&status_code).unwrap(),
+        "Content-Length: 522540234",
+        http_response.len() + content_length as usize,
         http_response
     );
 
+    println!("{}", response);
+
     stream.write(response.as_bytes()).unwrap();
+
     stream.flush().unwrap();
+
+    let mut bytes_written = 0;
+
+    if let Some(mut value) = http_file {
+        loop {
+            let mut buffer = [0; 1024 * 8];
+
+            match value.content.read(&mut buffer) {
+                Ok(bytes) => {
+                    println!("{}", bytes);
+
+                    bytes_written += bytes;
+
+                    if bytes != 0 {
+                        match stream.write(&buffer[..bytes]) {
+                            Ok(bytes_socket) => {
+                                println!("bytes_socket - {}", bytes_socket);
+                            }
+                            _ => {
+                                break;
+                            }
+                        }
+
+                        stream.flush().unwrap();
+                    } else {
+                        break;
+                    }
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+    }
+
+    println!("bytes_written - {}", bytes_written);
 }
 
 struct HttpHeaderStruct {
@@ -155,6 +195,11 @@ struct HttpHeaderStruct {
     method: String,
     path: String,
     headers: HashMap<String, String>,
+}
+
+struct HttpFileResponse {
+    size: u64,
+    content: File,
 }
 
 fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
@@ -186,7 +231,10 @@ fn parse_headers(buffer: [u8; 1024]) -> Result<HttpHeaderStruct, String> {
     Ok(http_header)
 }
 
-fn handle_request(http_header: &HttpHeaderStruct, dir_path: String) -> Result<String, String> {
+fn handle_request(
+    http_header: &HttpHeaderStruct,
+    dir_path: String,
+) -> Result<HttpFileResponse, String> {
     if http_header.method != "GET" {
         return Err(format!("bad_method"));
     }
@@ -214,14 +262,17 @@ fn handle_request(http_header: &HttpHeaderStruct, dir_path: String) -> Result<St
         return Err(format!("bad_path"));
     }
 
-    let file_content = fs::read_to_string(file_path.join(path_vec[1]));
-
-    match file_content {
+    match File::open(file_path.join(path_vec[1])) {
         Err(_text) => {
             return Err(format!("not_found"));
         }
         Ok(content) => {
-            return Ok(content);
+            let res = HttpFileResponse {
+                size: content.metadata().unwrap().len(),
+                content,
+            };
+
+            return Ok(res);
         }
     }
 }
