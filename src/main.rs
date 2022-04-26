@@ -103,6 +103,7 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let mut status_code = 200;
     let mut http_response: String = String::from("");
     let mut http_file: Option<HttpFileResponse> = None;
+    let mut is_chunked = false;
 
     match parse_headers(buffer) {
         Err(text) => {
@@ -128,6 +129,10 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
             Ok(content) => {
                 status_code = 200;
                 http_file = Some(content);
+
+                if http_header.headers.get("Transfer-Encoding") == Some(&String::from("chunked")) {
+                    is_chunked = true;
+                }
             }
         },
     }
@@ -149,9 +154,17 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     let mut bytes_written = 0;
 
     if let Some(mut value) = http_file {
-        stream
-            .write(format!("{}{}\r\n\r\n", "Content-Length: ", value.size(),).as_bytes())
-            .unwrap();
+        if !is_chunked {
+            stream
+                .write(format!("{}{}", "Content-Length: ", value.size(),).as_bytes())
+                .unwrap();
+        } else {
+            stream
+                .write(format!("Transfer-Encoding: chunked",).as_bytes())
+                .unwrap();
+        }
+
+        stream.write(format!("\r\n\r\n",).as_bytes()).unwrap();
 
         let mut buffer = [0; 1024 * 256];
 
@@ -161,7 +174,20 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
                     bytes_written += bytes;
 
                     if bytes != 0 {
-                        stream.write(&buffer[..(bytes)]).unwrap();
+                        if !is_chunked {
+                            stream.write(&buffer[..(bytes)]).unwrap();
+                        } else {
+                            stream
+                                .write(
+                                    format!(
+                                        "{}\r\n{}\r\n",
+                                        &buffer[..(bytes)].len(),
+                                        String::from_utf8(buffer[..(bytes)].to_vec()).unwrap()
+                                    )
+                                    .as_bytes(),
+                                )
+                                .unwrap();
+                        }
                     } else {
                         break;
                     }
@@ -170,6 +196,10 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
                     break;
                 }
             }
+        }
+
+        if is_chunked {
+            stream.write(format!("{}\r\n\r\n", 0,).as_bytes()).unwrap();
         }
     } else {
         println!("http_response - {}", http_response);
