@@ -146,8 +146,6 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
 
     stream.write(response.as_bytes()).unwrap();
 
-    stream.flush().unwrap();
-
     let mut bytes_written = 0;
 
     if let Some(mut value) = http_file {
@@ -155,24 +153,15 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
             .write(format!("{}{}\r\n\r\n", "Content-Length: ", value.size(),).as_bytes())
             .unwrap();
 
-        let mut buffer = [0; 1024 * 8];
+        let mut buffer = [0; 1024 * 256];
 
         loop {
             match value.file.read(&mut buffer) {
                 Ok(bytes) => {
-                    println!("{}", bytes);
-
                     bytes_written += bytes;
 
                     if bytes != 0 {
-                        match stream.write(&buffer[..(bytes)]) {
-                            Ok(bytes_socket) => {
-                                println!("bytes_socket - {}", bytes_socket);
-                            }
-                            _ => {
-                                break;
-                            }
-                        }
+                        stream.write(&buffer[..(bytes)]).unwrap();
                     } else {
                         break;
                     }
@@ -197,6 +186,8 @@ fn handle_connection(mut stream: TcpStream, dir_path: String) {
     }
 
     stream.write(format!("\r\n",).as_bytes()).unwrap();
+
+    stream.flush().unwrap();
 
     println!("bytes_written - {}", bytes_written);
 }
